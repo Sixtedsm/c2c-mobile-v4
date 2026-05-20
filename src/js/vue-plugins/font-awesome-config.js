@@ -205,6 +205,10 @@ import { faXmark as faXmarkV3 } from '@fortawesome/free-solid-svg-icons/faXmark'
 
 // V4 icons — offline-topo experience + planner.
 import { faArrowRightFromBracket as faArrowRightFromBracketV4 } from '@fortawesome/free-solid-svg-icons/faArrowRightFromBracket';
+import { faTent as faTentV4 } from '@fortawesome/free-solid-svg-icons/faTent';
+import { faUtensils as faUtensilsV4 } from '@fortawesome/free-solid-svg-icons/faUtensils';
+import { faHand as faHandV4 } from '@fortawesome/free-solid-svg-icons/faHand';
+import { faRotateLeft as faRotateLeftV4 } from '@fortawesome/free-solid-svg-icons/faRotateLeft';
 import { faChartLine as faChartLineV4 } from '@fortawesome/free-solid-svg-icons/faChartLine';
 import { faClipboardCheck as faClipboardCheckV4 } from '@fortawesome/free-solid-svg-icons/faClipboardCheck';
 import { faDroplet as faDropletV4 } from '@fortawesome/free-solid-svg-icons/faDroplet';
@@ -241,6 +245,10 @@ export default function install(Vue) {
 
     // V4
     faArrowRightFromBracketV4,
+    faTentV4,
+    faUtensilsV4,
+    faHandV4,
+    faRotateLeftV4,
     faChartLineV4,
     faClipboardCheckV4,
     faDropletV4,

@@ -222,9 +222,11 @@ export default {
       if (!this.$offline) return;
       try {
         const lang = this.lang || this.$user?.lang || 'fr';
-        const entry = await this.$offline.getDocument(associationType, documentId, lang);
-        if (entry?.data) {
-          this.$documentUtils.addAssociation(document, entry.data);
+        // $offline.getDocument returns the doc data directly (no wrapper),
+        // see offline-store.getDocument. Treat the result as the doc.
+        const data = await this.$offline.getDocument(associationType, documentId, lang);
+        if (data) {
+          this.$documentUtils.addAssociation(document, data);
         }
       } catch {
         // No offline copy either — give up silently. The user can still

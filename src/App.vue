@@ -340,6 +340,18 @@ html[data-theme='dark'] {
     color: #f0f0f0;
     border-color: rgba(255, 255, 255, 0.08);
   }
+  // Pressed / hover / highlighted states (CardContainer.vue scoped):
+  // V1 forces a near-white `$hover-background` (#f2f2f2). That made
+  // the card unreadable on tap because the text stayed white. Override
+  // with a slightly-lifted dark shade. Specificity bump: html[data-theme]
+  // + .card:hover[data-v-xxx] matches (0,2,2) vs the scoped (0,2,1).
+  .card:hover,
+  .card:focus,
+  .card:active,
+  .card.is-highlighted {
+    background: #353535;
+    color: #f5f5f5;
+  }
   .card div,
   .card p,
   .card span,
@@ -532,6 +544,45 @@ html[data-theme='dark'] {
     code { background: #1a1a1a; color: #ffd17a; }
     pre { background: #1a1a1a; }
     blockquote { border-left-color: rgba(255, 255, 255, 0.2); color: #b5b5b5; }
+  }
+
+  // c2c embedded figure widgets (the white blocks visible on V3 Mont
+  // Blanc page). Markdown.vue scoped #fafafa + #ddd → unreadable in
+  // dark mode. Descendant selector bumps specificity past the scoped
+  // attribute selector.
+  .markdown-content figure[c2c\:role='embedded-figure'],
+  .markdown-section figure[c2c\:role='embedded-figure'],
+  .topo-cooked figure[c2c\:role='embedded-figure'] {
+    background: #2a2a2a;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #e5e5e5;
+  }
+  .markdown-content figcaption,
+  .markdown-section figcaption,
+  .topo-cooked figcaption,
+  .markdown-content figure,
+  .markdown-section figure,
+  .topo-cooked figure {
+    color: #d5d5d5;
+  }
+  .section,
+  .documents-view,
+  .container {
+    background: transparent;
+  }
+  .content,
+  .content p,
+  .content li,
+  .content blockquote {
+    color: #e5e5e5;
+  }
+  .content h1,
+  .content h2,
+  .content h3,
+  .content h4,
+  .content h5,
+  .content h6 {
+    color: #f5f5f5;
   }
 }
 

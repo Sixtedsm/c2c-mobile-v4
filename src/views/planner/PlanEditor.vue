@@ -18,7 +18,8 @@
       <button
         type="button"
         class="button is-primary is-small plan-editor-save"
-        :disabled="saving || !plan.title.trim()"
+        :disabled="saving"
+        :title="!plan.title.trim() ? $gettext('Le titre sera généré automatiquement si vous ne le remplissez pas') : ''"
         @click="save"
       >
         <fa-icon icon="bookmark" />
@@ -83,8 +84,9 @@
       </div>
     </div>
 
-    <!-- Drawing mode banner — explains what tapping does. -->
-    <div v-if="drawingMode !== 'pan'" class="plan-editor-banner">
+    <!-- Drawing mode banner — explains what tapping does. Auto-hides
+         once the user has placed a few points (they've understood). -->
+    <div v-if="showDrawingBanner" class="plan-editor-banner">
       <fa-icon icon="circle-info" />
       &nbsp;
       <template v-if="drawingMode === 'on-trail'">
@@ -125,6 +127,92 @@
           </div>
         </div>
       </div>
+
+      <!-- Waypoints panel toggle (right side) -->
+      <button
+        type="button"
+        class="plan-editor-wp-toggle"
+        :class="{ 'is-active': waypointsPanelOpen }"
+        :aria-label="$gettext('Points de passage')"
+        :title="$gettext('Voir / modifier les points de passage')"
+        @click="toggleWaypointsPanel"
+      >
+        <fa-icon icon="list" />
+        <span class="plan-editor-wp-count" v-if="plan.coordinates.length">
+          {{ plan.coordinates.length }}
+        </span>
+      </button>
+
+      <!-- Waypoints side panel — scrollable list of every vertex, with
+           per-point reorder + delete + center-on-map. Replaces the
+           crude "undo last" by a precise editing tool. -->
+      <aside
+        v-if="waypointsPanelOpen"
+        class="plan-editor-wp-panel"
+        :aria-label="$gettext('Points de passage')"
+      >
+        <header>
+          <strong>{{ $gettext('Points de passage') }}</strong>
+          <small>{{ plan.coordinates.length }} {{ $gettext('points') }}</small>
+          <button
+            type="button"
+            class="plan-editor-wp-close"
+            :aria-label="$gettext('Fermer')"
+            @click="waypointsPanelOpen = false"
+          >
+            <fa-icon icon="xmark" />
+          </button>
+        </header>
+        <ul v-if="plan.coordinates.length">
+          <li
+            v-for="(c, i) in plan.coordinates"
+            :key="i"
+            :class="{ 'is-off-trail': c.mode === 'off-trail' }"
+          >
+            <span class="plan-wp-index">{{ i + 1 }}</span>
+            <button
+              type="button"
+              class="plan-wp-focus"
+              :title="$gettext('Centrer la carte sur ce point')"
+              @click="focusCoordinateOnMap(i)"
+            >
+              <span class="plan-wp-coord">{{ c.lat.toFixed(4) }}, {{ c.lon.toFixed(4) }}</span>
+              <span class="plan-wp-mode-tag" :class="c.mode">
+                {{ c.mode === 'off-trail' ? $gettext('hors-piste') : $gettext('sentier') }}
+              </span>
+            </button>
+            <div class="plan-wp-actions">
+              <button
+                type="button"
+                :disabled="i === 0"
+                :title="$gettext('Monter')"
+                @click="moveCoordinate(i, -1)"
+              >
+                <fa-icon icon="chevron-up" />
+              </button>
+              <button
+                type="button"
+                :disabled="i === plan.coordinates.length - 1"
+                :title="$gettext('Descendre')"
+                @click="moveCoordinate(i, 1)"
+              >
+                <fa-icon icon="chevron-down" />
+              </button>
+              <button
+                type="button"
+                class="is-danger"
+                :title="$gettext('Supprimer ce point')"
+                @click="removeCoordinate(i)"
+              >
+                <fa-icon icon="trash" />
+              </button>
+            </div>
+          </li>
+        </ul>
+        <p v-else class="plan-wp-empty">
+          {{ $gettext('Aucun point pour l\'instant. Tapez sur la carte pour en ajouter.') }}
+        </p>
+      </aside>
     </div>
 
     <!-- Bottom sheet: linked topos + segments/days + general notes -->
@@ -202,12 +290,100 @@
           </button>
         </section>
 
-        <!-- Stages / days -->
+        <!-- Stages / days — only shown when planning > 1 day. Each
+             day has its own stops list (refuge / bivouac / water /
+             summit / etc.) the user can curate. -->
         <section v-if="plan.days > 1" class="plan-section">
-          <h3>{{ $gettext('Étapes') }}</h3>
-          <p class="plan-empty-hint">
-            {{ $gettext('Les notes par étape sont accessibles depuis la mini-app du plan une fois sauvegardé.') }}
-          </p>
+          <h3>{{ $gettext('Étapes par jour') }}</h3>
+          <div v-for="d in plan.days" :key="d" class="plan-day-card">
+            <header class="plan-day-card-header">
+              <strong>{{ $gettext('Jour') }} {{ d }}</strong>
+              <span class="plan-day-stops-count">
+                {{ stopsForDay(d).length }} {{ $gettext('arrêt(s)') }}
+              </span>
+            </header>
+
+            <ul v-if="stopsForDay(d).length" class="plan-day-stops">
+              <li v-for="stop in stopsForDay(d)" :key="stop.id" :class="'stop-' + stop.type">
+                <span class="plan-stop-icon">
+                  <fa-icon :icon="stopIcon(stop.type)" />
+                </span>
+                <div class="plan-stop-body">
+                  <strong>{{ stop.name || $gettext('Sans nom') }}</strong>
+                  <small v-if="stop.notes">{{ stop.notes }}</small>
+                  <small v-if="stop.gps" class="plan-stop-gps">
+                    <fa-icon icon="location-dot" />
+                    {{ stop.gps.lat.toFixed(4) }}, {{ stop.gps.lon.toFixed(4) }}
+                  </small>
+                </div>
+                <button
+                  type="button"
+                  class="plan-stop-delete"
+                  :title="$gettext('Supprimer')"
+                  @click="removeStop(stop.id)"
+                >
+                  <fa-icon icon="trash" />
+                </button>
+              </li>
+            </ul>
+
+            <details class="plan-day-add">
+              <summary>
+                <fa-icon icon="plus" />
+                &nbsp;{{ $gettext('Ajouter un arrêt') }}
+              </summary>
+              <div class="plan-add-stop-form">
+                <label>
+                  <span>{{ $gettext('Type') }}</span>
+                  <select v-model="newStop.type">
+                    <option value="refuge">🏠 {{ $gettext('Refuge') }}</option>
+                    <option value="bivouac">⛺ {{ $gettext('Bivouac') }}</option>
+                    <option value="water">💧 {{ $gettext('Point d\'eau') }}</option>
+                    <option value="summit">⛰ {{ $gettext('Sommet') }}</option>
+                    <option value="pass">🌄 {{ $gettext('Col') }}</option>
+                    <option value="food">🍴 {{ $gettext('Ravitaillement') }}</option>
+                    <option value="view">👁 {{ $gettext('Point de vue') }}</option>
+                    <option value="other">📍 {{ $gettext('Autre') }}</option>
+                  </select>
+                </label>
+                <label>
+                  <span>{{ $gettext('Nom') }}</span>
+                  <input
+                    type="text"
+                    v-model="newStop.name"
+                    :placeholder="$gettext('Ex : Refuge des Conscrits')"
+                  />
+                </label>
+                <label>
+                  <span>{{ $gettext('Notes (optionnel)') }}</span>
+                  <input
+                    type="text"
+                    v-model="newStop.notes"
+                    :placeholder="$gettext('Ex : gardé en été, 22 €/nuit')"
+                  />
+                </label>
+                <div class="plan-add-stop-actions">
+                  <button
+                    type="button"
+                    class="button is-small"
+                    @click="attachStopGps"
+                    :disabled="attachingGps"
+                  >
+                    <fa-icon icon="location-crosshairs" />
+                    &nbsp;{{ newStop.gps ? $gettext('Position OK') : $gettext('Joindre ma position') }}
+                  </button>
+                  <button
+                    type="button"
+                    class="button is-small is-primary"
+                    :disabled="!newStop.name.trim()"
+                    @click="addStopToDay(d)"
+                  >
+                    {{ $gettext('Ajouter') }}
+                  </button>
+                </div>
+              </div>
+            </details>
+          </div>
         </section>
 
         <!-- General notes -->
@@ -308,6 +484,120 @@ function disciplineGuess(linkedTopos) {
   return null;
 }
 
+// OSRM public demo for foot routing. Returns a GeoJSON LineString
+// between waypoints, snapped to OpenStreetMap's hiking-aware foot
+// network. Rate-limited (~1 req/sec), good enough for our usage.
+// docs: https://project-osrm.org/docs/v5.5.1/api/
+async function osrmRoute(lonLatPairs) {
+  if (!lonLatPairs || lonLatPairs.length < 2) return null;
+  const coords = lonLatPairs.map((p) => `${p[0]},${p[1]}`).join(';');
+  const url = `https://router.project-osrm.org/route/v1/foot/${coords}?geometries=geojson&overview=full`;
+  const resp = await fetch(url);
+  if (!resp.ok) return null;
+  const data = await resp.json();
+  if (data?.code !== 'Ok' || !data.routes?.length) return null;
+  return data.routes[0].geometry; // GeoJSON LineString in lon/lat
+}
+
+// Smart topo association scoring (replaces naive bbox match).
+// For routes (LineString geom_detail), measure overlap with the trace:
+// % of route points within MATCH_DIST_M of any trace point. Anything
+// below MIN_OVERLAP is dropped.
+// For waypoints, score by relevance of waypoint_type + closeness.
+const MATCH_DIST_M = 150;
+const MIN_OVERLAP = 0.25;
+
+const WAYPOINT_RELEVANCE = {
+  // Highly relevant — the stuff users actually plan around
+  summit: 1.0,
+  hut: 1.0,
+  gite: 0.9,
+  pass: 0.9,
+  bivouac: 0.9,
+  bisse: 0.6,
+  source: 0.6,
+  lake: 0.6,
+  cave: 0.5,
+  paragliding_takeoff: 0.5,
+  paragliding_landing: 0.4,
+  climbing_outdoor: 0.5,
+  bergschrund: 0.4,
+  climbing_indoor: 0.1,
+  gathering_place: 0.3,
+  // Low / noise — typically not useful for trek planning
+  access: 0.05,
+  parking: 0.05,
+  hut_unstaffed: 0.6,
+  base_camp: 0.5,
+  decision_point: 0.4,
+  weather_station: 0.2,
+  webcam: 0.1,
+  virtual: 0.05,
+  water_point: 0.6,
+  local_product: 0.1,
+  camp_site: 0.6,
+  dam: 0.2,
+};
+
+function pointToSegmentDist(p, a, b) {
+  // Approx great-circle: treat as flat in meters at this scale.
+  // p, a, b are [lon, lat]. Use simple equirectangular projection at
+  // mean latitude for distance.
+  const meanLat = (a[1] + b[1]) / 2;
+  const cosLat = Math.cos((meanLat * Math.PI) / 180);
+  const toM = (dLon, dLat) => Math.sqrt((dLon * 111320 * cosLat) ** 2 + (dLat * 110540) ** 2);
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  if (dx === 0 && dy === 0) return toM(p[0] - a[0], p[1] - a[1]);
+  const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / (dx * dx + dy * dy)));
+  const px = a[0] + t * dx;
+  const py = a[1] + t * dy;
+  return toM(p[0] - px, p[1] - py);
+}
+
+function minDistFromPointToTrace(point, traceCoords) {
+  let min = Infinity;
+  for (let i = 1; i < traceCoords.length; i += 1) {
+    const d = pointToSegmentDist(point, traceCoords[i - 1], traceCoords[i]);
+    if (d < min) min = d;
+  }
+  return min;
+}
+
+function routeOverlapScore(route, traceCoords) {
+  // Pull route geometry (LineString in EPSG:3857). Convert to lon/lat
+  // points and measure what fraction passes near the trace.
+  const geom = route?.geometry?.geom_detail;
+  if (!geom) return 0;
+  let parsed;
+  try { parsed = typeof geom === 'string' ? JSON.parse(geom) : geom; } catch { return 0; }
+  if (parsed.type !== 'LineString' || !parsed.coordinates?.length) return 0;
+  let near = 0;
+  for (const xy of parsed.coordinates) {
+    const lonLat = ol.proj.toLonLat([xy[0], xy[1]]);
+    const d = minDistFromPointToTrace(lonLat, traceCoords);
+    if (d <= MATCH_DIST_M) near += 1;
+  }
+  return near / parsed.coordinates.length;
+}
+
+function waypointScore(wp, traceCoords) {
+  const wtype = wp.waypoint_type;
+  const relevance = WAYPOINT_RELEVANCE[wtype] ?? 0.2;
+  const geom = wp?.geometry?.geom;
+  if (!geom) return 0;
+  let parsed;
+  try { parsed = typeof geom === 'string' ? JSON.parse(geom) : geom; } catch { return 0; }
+  let lonLat;
+  if (parsed.type === 'Point') lonLat = ol.proj.toLonLat(parsed.coordinates);
+  else return 0;
+  const d = minDistFromPointToTrace(lonLat, traceCoords);
+  // Inverse-distance score, clamped to MATCH_DIST_M.
+  if (d > MATCH_DIST_M * 2) return 0;
+  const proximity = Math.max(0, 1 - d / (MATCH_DIST_M * 2));
+  return relevance * proximity;
+}
+
 export default {
   name: 'PlanEditor',
 
@@ -322,6 +612,9 @@ export default {
         coordinates: [],
         linkedTopos: [],
         generalNotes: '',
+        // V4 — per-day stops along the route (refuge, bivouac, water…)
+        // Shape: [{ id, day, type, name, notes, gps?: {lon, lat} }]
+        stops: [],
         createdAt: null,
         updatedAt: null,
       },
@@ -333,13 +626,39 @@ export default {
       traceFeature: null,
       traceLayer: null,
       initialExtent: null,
+      waypointsPanelOpen: false,
+      draftRestored: false,
+      // Snap-to-trail cache. Key = "lon1,lat1-lon2,lat2" of two
+      // consecutive on-trail anchors; value = array of [lon, lat]
+      // returned by OSRM (or null if the query failed). Content-keyed
+      // so removing/reordering anchors doesn't invalidate other pairs.
+      snapCache: {},
+      snapInFlight: 0,
+      // Inline form state for adding a new stop. Shared across days
+      // because only one form is open at a time (the <details> auto-
+      // collapses others).
+      newStop: { type: 'refuge', name: '', notes: '', gps: null },
+      attachingGps: false,
     };
   },
 
   computed: {
     documentsForMap() {
-      // Show linked topos as document features on the map.
-      return this.plan.linkedTopos;
+      // Show linked topos as document features on the map. Tag them
+      // nonInteractive so OlMap's click handler doesn't router.push
+      // away when the user taps on a topo while tracing — that was
+      // the "trace disappears" bug Sixte reported. The `properties`
+      // bag is the V1 convention (see OlMap.onClick).
+      return this.plan.linkedTopos.map((t) => ({
+        ...t,
+        properties: { ...(t.properties || {}), nonInteractive: true },
+      }));
+    },
+
+    // Banner becomes noise once the user has clearly understood the
+    // gesture — hide it after a few points.
+    showDrawingBanner() {
+      return this.drawingMode !== 'pan' && this.plan.coordinates.length < 3;
     },
 
     totalDistance() {
@@ -371,10 +690,35 @@ export default {
 
   async mounted() {
     if (this.$route.params.id) {
-      // Loading existing plan
+      // Editing an existing plan — load from offline store.
       const existing = await this.$offline.getPlan(this.$route.params.id);
       if (existing) {
         this.plan = { ...this.plan, ...existing };
+      }
+    } else {
+      // New plan — restore a draft from localStorage if the user was
+      // mid-edit on a previous session (closed the tab, lost network,
+      // accidentally navigated away from the map, etc.). Anti-data-loss.
+      try {
+        const draftRaw = window.localStorage.getItem('v4.planDraft');
+        if (draftRaw) {
+          const draft = JSON.parse(draftRaw);
+          if (draft && Array.isArray(draft.coordinates) && draft.coordinates.length > 0) {
+            const restore = window.confirm(
+              this.$gettext(
+                'Un brouillon de plan en cours a été retrouvé ({n} points). Le reprendre ?'
+              ).replace('{n}', draft.coordinates.length)
+            );
+            if (restore) {
+              this.plan = { ...this.plan, ...draft };
+              this.draftRestored = true;
+            } else {
+              window.localStorage.removeItem('v4.planDraft');
+            }
+          }
+        }
+      } catch {
+        // localStorage unavailable — ignore, no autosave possible
       }
     }
     this.$nextTick(() => this.attachDrawingLayer());
@@ -383,12 +727,137 @@ export default {
   watch: {
     'plan.coordinates'() {
       this.refreshTraceFeature();
+      this.persistDraft();
+      // Kick off snap-to-trail for any new on-trail pair. snapDirty
+      // is a no-op for pairs already cached.
+      this.snapDirtyPairs();
     },
+    'plan.title'() { this.persistDraft(); },
+    'plan.generalNotes'() { this.persistDraft(); },
+    'plan.discipline'() { this.persistDraft(); },
+    'plan.days'() { this.persistDraft(); },
+    'plan.linkedTopos'() { this.persistDraft(); },
+    'plan.stops'() { this.persistDraft(); },
   },
 
   methods: {
+    // Snapshot the live draft to localStorage so a refresh / accidental
+    // navigation / crashed tab doesn't lose the user's tracing work.
+    // Debounced via a timer so we don't write to localStorage on every
+    // single keystroke or coordinate add. Cleared on a real save.
+    persistDraft() {
+      if (this._draftTimer) window.clearTimeout(this._draftTimer);
+      this._draftTimer = window.setTimeout(() => {
+        try {
+          // Only persist if there's at least 1 point — empty drafts
+          // are noise we don't want to restore.
+          if (this.plan.coordinates.length === 0 && !this.plan.title.trim()) {
+            window.localStorage.removeItem('v4.planDraft');
+            return;
+          }
+          // Don't persist the document_id of a NEW plan; only an
+          // already-saved one (where the user is editing).
+          window.localStorage.setItem('v4.planDraft', JSON.stringify(this.plan));
+        } catch {
+          /* quota / disabled — ignore */
+        }
+      }, 600);
+    },
+
+    clearDraft() {
+      try { window.localStorage.removeItem('v4.planDraft'); } catch { /* ignore */ }
+    },
+
     setDrawingMode(mode) {
       this.drawingMode = mode;
+    },
+
+    toggleWaypointsPanel() {
+      this.waypointsPanelOpen = !this.waypointsPanelOpen;
+    },
+
+    removeCoordinate(index) {
+      if (index < 0 || index >= this.plan.coordinates.length) return;
+      this.plan.coordinates = this.plan.coordinates.filter((_, i) => i !== index);
+      // Re-detect topos when removing points might change which topos
+      // intersect the trace.
+      if (this.plan.coordinates.length >= 2 && this.$offline.online) {
+        this.scheduleTopoDetection();
+      }
+    },
+
+    moveCoordinate(index, delta) {
+      const newIndex = index + delta;
+      if (newIndex < 0 || newIndex >= this.plan.coordinates.length) return;
+      const next = [...this.plan.coordinates];
+      const [item] = next.splice(index, 1);
+      next.splice(newIndex, 0, item);
+      this.plan.coordinates = next;
+    },
+
+    focusCoordinateOnMap(index) {
+      const olMap = this.$refs.map?.map;
+      const c = this.plan.coordinates[index];
+      if (!olMap || !c) return;
+      olMap.getView().animate({
+        center: ol.proj.fromLonLat([c.lon, c.lat]),
+        zoom: Math.max(olMap.getView().getZoom(), 14),
+        duration: 400,
+      });
+    },
+
+    // Per-day stops (refuge / bivouac / water…)
+    stopsForDay(day) {
+      return (this.plan.stops || []).filter((s) => s.day === day);
+    },
+
+    stopIcon(type) {
+      const map = {
+        refuge: 'house',
+        bivouac: 'tent', // may fall back to a generic icon if absent
+        water: 'droplet',
+        summit: 'mountain',
+        pass: 'mountain-sun',
+        food: 'utensils',
+        view: 'eye',
+        other: 'location-dot',
+      };
+      return map[type] || 'location-dot';
+    },
+
+    addStopToDay(day) {
+      const name = this.newStop.name.trim();
+      if (!name) return;
+      const newId = `stop_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      this.plan.stops = [
+        ...(this.plan.stops || []),
+        {
+          id: newId,
+          day,
+          type: this.newStop.type,
+          name,
+          notes: this.newStop.notes.trim(),
+          gps: this.newStop.gps,
+        },
+      ];
+      // Reset form for next add.
+      this.newStop = { type: 'refuge', name: '', notes: '', gps: null };
+    },
+
+    removeStop(id) {
+      this.plan.stops = (this.plan.stops || []).filter((s) => s.id !== id);
+    },
+
+    async attachStopGps() {
+      this.attachingGps = true;
+      try {
+        const sample = await this.$outingSession.requestCurrentPosition();
+        this.newStop = { ...this.newStop, gps: { lon: sample.lon, lat: sample.lat } };
+      } catch {
+        window.alert(this.$gettext('Position indisponible — vérifie les permissions de géolocalisation.'));
+      } finally {
+        this.attachingGps = false;
+      }
     },
 
     onMapSingleClick(evt) {
@@ -462,20 +931,37 @@ export default {
       source.clear();
       const coords = this.plan.coordinates;
       if (coords.length < 1) return;
-      // Build per-segment features so we can style on-trail vs off-trail
-      // differently. Also add a Point feature at each user-added vertex
-      // for visibility.
+
+      // Per-segment features. For two consecutive on-trail anchors,
+      // use the snapped polyline from OSRM (if cached); otherwise
+      // fall back to a straight line. Off-trail segments are always
+      // straight (dashed red in the style fn).
       for (let i = 1; i < coords.length; i += 1) {
-        const a = ol.proj.fromLonLat([coords[i - 1].lon, coords[i - 1].lat]);
-        const b = ol.proj.fromLonLat([coords[i].lon, coords[i].lat]);
         const segMode = coords[i].mode || 'on-trail';
+        const a = coords[i - 1];
+        const b = coords[i];
+        let lineCoords;
+        if (a.mode === 'on-trail' && b.mode === 'on-trail') {
+          const cached = this.snapCache[this.snapKey(a, b)];
+          if (cached && cached.length >= 2) {
+            // Use the snapped path (in lon/lat) — project each to 3857.
+            lineCoords = cached.map((p) => ol.proj.fromLonLat(p));
+          }
+        }
+        if (!lineCoords) {
+          lineCoords = [
+            ol.proj.fromLonLat([a.lon, a.lat]),
+            ol.proj.fromLonLat([b.lon, b.lat]),
+          ];
+        }
         const f = new ol.Feature({
-          geometry: new ol.geom.LineString([a, b]),
+          geometry: new ol.geom.LineString(lineCoords),
           mode: segMode,
         });
         source.addFeature(f);
       }
-      // Vertex points
+
+      // Vertex points (user-clicked anchors).
       for (let i = 0; i < coords.length; i += 1) {
         const xy = ol.proj.fromLonLat([coords[i].lon, coords[i].lat]);
         const f = new ol.Feature({ geometry: new ol.geom.Point(xy), vertex: true });
@@ -511,7 +997,7 @@ export default {
     },
 
     async detectLinkedTopos() {
-      if (!this.plan.coordinates.length || !this.$offline.online) return;
+      if (this.plan.coordinates.length < 2 || !this.$offline.online) return;
       this.detectingTopos = true;
       try {
         const pts = this.plan.coordinates.map((p) => [p.lon, p.lat]);
@@ -521,23 +1007,50 @@ export default {
         const sw = ol.proj.fromLonLat([bb[0], bb[1]]);
         const ne = ol.proj.fromLonLat([bb[2], bb[3]]);
         const bboxMerc = `${sw[0]},${sw[1]},${ne[0]},${ne[1]}`;
-        // Search routes + waypoints in bbox.
-        const [routes, waypoints] = await Promise.all([
-          c2c.route.getAll({ bbox: bboxMerc, limit: 30 }),
-          c2c.waypoint.getAll({ bbox: bboxMerc, limit: 30 }),
+
+        // We need each route/waypoint's geometry to score it — the
+        // listing endpoint returns it inline, so a single call covers
+        // both the candidate set AND the geometry. limit:50 to keep
+        // the bandwidth reasonable.
+        const [routesResp, waypointsResp] = await Promise.all([
+          c2c.route.getAll({ bbox: bboxMerc, limit: 50 }),
+          c2c.waypoint.getAll({ bbox: bboxMerc, limit: 50 }),
         ]);
+        const routesAll = routesResp?.data?.documents || [];
+        const waypointsAll = waypointsResp?.data?.documents || [];
+
+        // Smart scoring: prefer routes that overlap with the trace
+        // ≥ MIN_OVERLAP, prefer waypoints whose type is relevant AND
+        // close to the trace. Drop the noise. See the helpers above
+        // for the math.
+        const scoredRoutes = routesAll
+          .map((r) => ({ doc: r, score: routeOverlapScore(r, pts) }))
+          .filter((x) => x.score >= MIN_OVERLAP)
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 8);
+
+        const scoredWaypoints = waypointsAll
+          .map((w) => ({ doc: w, score: waypointScore(w, pts) }))
+          .filter((x) => x.score > 0.15)
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 8);
+
         const found = [
-          ...(routes?.data?.documents || []),
-          ...(waypoints?.data?.documents || []),
+          ...scoredRoutes.map((x) => ({ ...x.doc, _score: x.score })),
+          ...scoredWaypoints.map((x) => ({ ...x.doc, _score: x.score })),
         ];
-        // Merge into linkedTopos, deduping by document_id+type.
+
+        // Merge into linkedTopos, deduping by document_id+type. Keep
+        // user-added (unscored) topos pinned at the top.
         const existing = new Map(
           this.plan.linkedTopos.map((t) => [`${t.type}-${t.document_id}`, t])
         );
         for (const doc of found) {
-          existing.set(`${doc.type}-${doc.document_id}`, doc);
+          const key = `${doc.type}-${doc.document_id}`;
+          if (!existing.has(key)) existing.set(key, doc);
         }
         this.plan.linkedTopos = Array.from(existing.values());
+
         // Auto-guess discipline if not user-set.
         const guess = disciplineGuess(this.plan.linkedTopos);
         if (guess && (this.plan.discipline === 'hiking' || !this.plan.discipline)) {
@@ -547,6 +1060,53 @@ export default {
         // Network blip is fine — user can retry from the button.
       } finally {
         this.detectingTopos = false;
+      }
+    },
+
+    // OSRM snap-to-trail for consecutive on-trail anchors. Cached
+    // by content hash so reordering / inserting points doesn't waste
+    // a query.
+    snapKey(a, b) {
+      return `${a.lon.toFixed(5)},${a.lat.toFixed(5)}-${b.lon.toFixed(5)},${b.lat.toFixed(5)}`;
+    },
+
+    async snapBetweenAnchors(a, b) {
+      if (!this.$offline.online) return null;
+      const key = this.snapKey(a, b);
+      if (this.snapCache[key] !== undefined) return this.snapCache[key];
+      // Reserve the slot to prevent duplicate inflight requests.
+      this.$set(this.snapCache, key, null);
+      this.snapInFlight += 1;
+      try {
+        const geom = await osrmRoute([[a.lon, a.lat], [b.lon, b.lat]]);
+        const coords = geom?.coordinates || null;
+        this.$set(this.snapCache, key, coords);
+        // Re-render the trace once snapping data is in.
+        this.refreshTraceFeature();
+        return coords;
+      } catch {
+        return null;
+      } finally {
+        this.snapInFlight -= 1;
+      }
+    },
+
+    // Trigger snap requests for any pair of consecutive on-trail
+    // anchors that doesn't have a cache entry yet. Called after every
+    // anchor add / remove / move.
+    snapDirtyPairs() {
+      const coords = this.plan.coordinates;
+      for (let i = 1; i < coords.length; i += 1) {
+        if (coords[i - 1].mode === 'on-trail' && coords[i].mode === 'on-trail') {
+          const key = this.snapKey(coords[i - 1], coords[i]);
+          if (this.snapCache[key] === undefined) {
+            // Schedule with throttle to avoid hammering OSRM's free demo.
+            this._snapQueue = (this._snapQueue || Promise.resolve()).then(async () => {
+              await this.snapBetweenAnchors(coords[i - 1], coords[i]);
+              await new Promise((r) => setTimeout(r, 250));
+            });
+          }
+        }
       }
     },
 
@@ -583,10 +1143,19 @@ export default {
     },
 
     async save() {
+      // Auto-title when empty — friendlier than disabling the button
+      // and leaving the user stuck. Format: "Plan du DD/MM/YYYY".
+      if (!this.plan.title.trim()) {
+        const d = new Date();
+        const day = String(d.getDate()).padStart(2, '0');
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        this.plan.title = `Plan du ${day}/${month}/${d.getFullYear()}`;
+      }
       this.saving = true;
       try {
         const id = await this.$offline.savePlan(this.plan);
         this.plan.document_id = id;
+        this.clearDraft();
         toast({
           type: 'is-success',
           position: 'bottom-center',
@@ -675,6 +1244,7 @@ ${trkpts}
 
   beforeDestroy() {
     if (this._detectTimer) window.clearTimeout(this._detectTimer);
+    if (this._draftTimer) window.clearTimeout(this._draftTimer);
     const olMap = this.$refs.map?.map;
     if (olMap) olMap.un('singleclick', this.onMapSingleClick);
   },
@@ -814,6 +1384,321 @@ ${trkpts}
   gap: 0.9rem;
   strong { display: block; color: #4a4a4a; font-size: 0.9rem; line-height: 1; }
   small { display: block; font-size: 0.62rem; color: #6b6b6b; text-transform: uppercase; }
+}
+
+// Floating button on the right side of the map opening the waypoints
+// list panel. Stays above the bottom sheet.
+.plan-editor-wp-toggle {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  z-index: 12;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: none;
+  background: white;
+  color: #4a4a4a;
+  font-size: 1rem;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.18);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  &:hover, &:focus { background: #f0f4f8; outline: none; }
+  &.is-active { background: #ff9933; color: white; }
+}
+
+.plan-editor-wp-count {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  background: #ff9933;
+  color: white;
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 18px;
+  border-radius: 9px;
+  text-align: center;
+  box-shadow: 0 0 0 2px white;
+}
+
+.plan-editor-wp-panel {
+  position: absolute;
+  top: 0.5rem;
+  right: 3.7rem;
+  bottom: 0.5rem;
+  z-index: 11;
+  width: min(280px, calc(100vw - 5rem));
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+
+  > header {
+    flex: 0 0 auto;
+    padding: 0.55rem 0.7rem;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+
+    strong { font-size: 0.85rem; color: #4a4a4a; }
+    small { color: #6b6b6b; font-size: 0.7rem; flex: 1; }
+  }
+
+  ul {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow-y: auto;
+    list-style: none;
+    margin: 0;
+    padding: 0.3rem 0;
+  }
+
+  li {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.35rem 0.5rem;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+
+    &:hover { background: rgba(0, 0, 0, 0.03); }
+    &.is-off-trail .plan-wp-mode-tag { background: rgba(192, 57, 43, 0.15); color: #c0392b; }
+  }
+}
+
+.plan-editor-wp-close {
+  border: none;
+  background: transparent;
+  color: #6b6b6b;
+  cursor: pointer;
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+  &:hover { background: rgba(0, 0, 0, 0.05); color: #4a4a4a; }
+}
+
+.plan-wp-index {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  background: #f0f4f8;
+  color: #4a4a4a;
+  font-size: 0.72rem;
+  font-weight: 700;
+  border-radius: 11px;
+}
+
+.plan-wp-focus {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  background: transparent;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  padding: 0.1rem 0.2rem;
+  min-width: 0;
+
+  &:hover .plan-wp-coord { color: #337ab7; }
+}
+
+.plan-wp-coord {
+  font-size: 0.72rem;
+  font-family: monospace;
+  color: #4a4a4a;
+}
+
+.plan-wp-mode-tag {
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.05rem 0.35rem;
+  border-radius: 3px;
+  background: rgba(51, 122, 183, 0.15);
+  color: #337ab7;
+
+  &.off-trail {
+    background: rgba(192, 57, 43, 0.15);
+    color: #c0392b;
+  }
+}
+
+.plan-wp-actions {
+  flex: 0 0 auto;
+  display: inline-flex;
+  gap: 0.1rem;
+
+  button {
+    width: 24px;
+    height: 24px;
+    border: none;
+    background: transparent;
+    color: #6b6b6b;
+    cursor: pointer;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    &:hover:not(:disabled) { background: rgba(0, 0, 0, 0.05); color: #4a4a4a; }
+    &:disabled { opacity: 0.3; cursor: not-allowed; }
+    &.is-danger { color: #c0392b; }
+    &.is-danger:hover:not(:disabled) { background: rgba(192, 57, 43, 0.08); }
+  }
+}
+
+.plan-wp-empty {
+  text-align: center;
+  color: #9a9a9a;
+  font-size: 0.8rem;
+  font-style: italic;
+  padding: 1.5rem 1rem;
+  margin: 0;
+}
+
+// Multi-day stops UI inside the bottom sheet
+.plan-day-card {
+  background: white;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  margin-bottom: 0.6rem;
+  overflow: hidden;
+}
+
+.plan-day-card-header {
+  padding: 0.55rem 0.7rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(0, 0, 0, 0.02);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+
+  strong { font-size: 0.9rem; color: #4a4a4a; }
+}
+
+.plan-day-stops-count {
+  font-size: 0.7rem;
+  color: #6b6b6b;
+}
+
+.plan-day-stops {
+  list-style: none;
+  margin: 0;
+  padding: 0.2rem 0;
+
+  li {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0.4rem 0.7rem;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+
+    &:last-child { border-bottom: none; }
+  }
+}
+
+.plan-stop-icon {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff5e6;
+  color: #ff9933;
+  border-radius: 6px;
+}
+
+.plan-stop-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+
+  strong { font-size: 0.85rem; color: #4a4a4a; }
+  small { font-size: 0.72rem; color: #6b6b6b; }
+}
+
+.plan-stop-gps {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-family: monospace !important;
+  color: #337ab7 !important;
+}
+
+.plan-stop-delete {
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  color: #9a9a9a;
+  cursor: pointer;
+  padding: 0.2rem 0.3rem;
+  border-radius: 4px;
+  &:hover { color: #c0392b; background: rgba(192, 57, 43, 0.06); }
+}
+
+.plan-day-add {
+  border-top: 1px dashed rgba(0, 0, 0, 0.08);
+
+  summary {
+    padding: 0.45rem 0.7rem;
+    font-size: 0.8rem;
+    color: #337ab7;
+    cursor: pointer;
+    list-style: none;
+
+    &::-webkit-details-marker { display: none; }
+    &:hover { background: rgba(51, 122, 183, 0.04); }
+  }
+
+  &[open] summary {
+    border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+  }
+}
+
+.plan-add-stop-form {
+  padding: 0.5rem 0.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+
+  label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+
+    span {
+      font-size: 0.7rem;
+      color: #6b6b6b;
+    }
+    input, select {
+      padding: 0.35rem 0.45rem;
+      border: 1px solid rgba(0, 0, 0, 0.12);
+      border-radius: 5px;
+      font-size: 0.85rem;
+      color: #4a4a4a;
+      background: white;
+    }
+  }
+}
+
+.plan-add-stop-actions {
+  display: flex;
+  gap: 0.3rem;
+  margin-top: 0.3rem;
+  justify-content: flex-end;
 }
 
 .plan-editor-bottom {
@@ -969,6 +1854,65 @@ ${trkpts}
 <style lang="scss">
 html[data-theme='dark'] {
   .plan-editor { background: #1a1a1a; }
+  .plan-editor-wp-toggle {
+    background: #2a2a2a;
+    color: #e5e5e5;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.5);
+    &:hover, &:focus { background: #353535; }
+  }
+  .plan-editor-wp-count { box-shadow: 0 0 0 2px #2a2a2a; }
+  .plan-editor-wp-panel {
+    background: #2a2a2a;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+    > header {
+      border-bottom-color: rgba(255, 255, 255, 0.08);
+      strong { color: #f5f5f5; }
+      small { color: #9a9a9a; }
+    }
+    li {
+      border-bottom-color: rgba(255, 255, 255, 0.05);
+      &:hover { background: rgba(255, 255, 255, 0.04); }
+    }
+  }
+  .plan-editor-wp-close { color: #9a9a9a; &:hover { background: rgba(255, 255, 255, 0.06); color: #f5f5f5; } }
+  .plan-wp-index { background: #3a3a3a; color: #e5e5e5; }
+  .plan-wp-coord { color: #d5d5d5; }
+  .plan-wp-empty { color: #6b6b6b; }
+  .plan-wp-actions button {
+    color: #9a9a9a;
+    &:hover:not(:disabled) { background: rgba(255, 255, 255, 0.06); color: #e5e5e5; }
+    &.is-danger { color: #ff6b5a; }
+  }
+  // Day cards
+  .plan-day-card { background: #2a2a2a; border-color: rgba(255, 255, 255, 0.08); }
+  .plan-day-card-header {
+    background: rgba(255, 255, 255, 0.04);
+    border-bottom-color: rgba(255, 255, 255, 0.06);
+    strong { color: #f5f5f5; }
+  }
+  .plan-day-stops-count { color: #9a9a9a; }
+  .plan-day-stops li { border-bottom-color: rgba(255, 255, 255, 0.06); }
+  .plan-stop-icon { background: #3a2f1a; }
+  .plan-stop-body strong { color: #f5f5f5; }
+  .plan-stop-body small { color: #b5b5b5; }
+  .plan-stop-gps { color: #6db4ff !important; }
+  .plan-stop-delete {
+    color: #9a9a9a;
+    &:hover { color: #ff6b5a; background: rgba(255, 107, 90, 0.08); }
+  }
+  .plan-day-add {
+    border-top-color: rgba(255, 255, 255, 0.08);
+    summary { color: #6db4ff; &:hover { background: rgba(109, 180, 255, 0.06); } }
+    &[open] summary { border-bottom-color: rgba(255, 255, 255, 0.06); }
+  }
+  .plan-add-stop-form {
+    label span { color: #9a9a9a; }
+    input, select {
+      background: #1f1f1f;
+      color: #e5e5e5;
+      border-color: rgba(255, 255, 255, 0.15);
+    }
+  }
   .plan-editor-header {
     background: #232323;
     border-bottom-color: rgba(255, 255, 255, 0.08);

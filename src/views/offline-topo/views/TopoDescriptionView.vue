@@ -59,7 +59,27 @@
           </ul>
         </section>
 
-        <p v-if="!document.generalNotes && (!document.linkedTopos || !document.linkedTopos.length)" class="topo-empty">
+        <!-- Multi-day stops curated in the planner -->
+        <section v-if="planDays.length" class="topo-section">
+          <h2>{{ $gettext('Étapes & arrêts') }}</h2>
+          <div v-for="day in planDays" :key="'d' + day.day" class="topo-plan-day">
+            <header>
+              <strong>{{ $gettext('Jour') }} {{ day.day }}</strong>
+              <span>{{ day.stops.length }} {{ $gettext('arrêt(s)') }}</span>
+            </header>
+            <ul v-if="day.stops.length">
+              <li v-for="stop in day.stops" :key="stop.id">
+                <span class="topo-plan-stop-icon">{{ stopEmoji(stop.type) }}</span>
+                <div class="topo-plan-stop-body">
+                  <strong>{{ stop.name }}</strong>
+                  <small v-if="stop.notes">{{ stop.notes }}</small>
+                </div>
+              </li>
+            </ul>
+          </div>
+        </section>
+
+        <p v-if="!document.generalNotes && (!document.linkedTopos || !document.linkedTopos.length) && !planDays.length" class="topo-empty">
           {{ $gettext('Plan en cours de construction. Ouvrez l\'édition pour le compléter.') }}
         </p>
       </template>
@@ -211,6 +231,21 @@ export default {
     quickStats() {
       return statsFor(this.document, this.discipline, this.$gettext);
     },
+
+    // For plan-type documents: group stops by day so the experience
+    // view shows them as N day-cards. Returns empty array when the
+    // doc isn't a plan or has no stops.
+    planDays() {
+      if (this.type !== 'plan' || !this.document?.stops?.length) return [];
+      const byDay = new Map();
+      for (const s of this.document.stops) {
+        if (!byDay.has(s.day)) byDay.set(s.day, []);
+        byDay.get(s.day).push(s);
+      }
+      return Array.from(byDay.keys())
+        .sort((a, b) => a - b)
+        .map((day) => ({ day, stops: byDay.get(day) }));
+    },
   },
 
   methods: {
@@ -221,6 +256,18 @@ export default {
       if (!image) return '';
       const loc = image.locales?.find?.((l) => l.lang === this.lang) || image.locales?.[0];
       return loc?.title || '';
+    },
+    stopEmoji(type) {
+      return {
+        refuge: '🏠',
+        bivouac: '⛺',
+        water: '💧',
+        summit: '⛰️',
+        pass: '🌄',
+        food: '🍴',
+        view: '👁️',
+        other: '📍',
+      }[type] || '📍';
     },
   },
 };
@@ -415,6 +462,61 @@ export default {
     }
   }
 }
+
+.topo-plan-day {
+  background: white;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  margin-bottom: 0.5rem;
+  overflow: hidden;
+
+  > header {
+    padding: 0.5rem 0.7rem;
+    background: rgba(0, 0, 0, 0.02);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    strong { font-size: 0.88rem; color: #4a4a4a; }
+    span { font-size: 0.7rem; color: #6b6b6b; }
+  }
+
+  ul {
+    list-style: none;
+    margin: 0;
+    padding: 0.2rem 0;
+
+    li {
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      padding: 0.4rem 0.7rem;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+      &:last-child { border-bottom: none; }
+    }
+  }
+}
+
+.topo-plan-stop-icon {
+  font-size: 1.2rem;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.topo-plan-stop-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+
+  strong { font-size: 0.88rem; color: #4a4a4a; }
+  small { font-size: 0.74rem; color: #6b6b6b; }
+}
 </style>
 
 <style lang="scss">
@@ -432,5 +534,18 @@ html[data-theme='dark'] {
   .topo-description-view .topo-cooked { color: #e5e5e5; }
   .topo-description-view .topo-cooked a { color: #6db4ff; }
   .topo-description-view .topo-empty { color: #6b6b6b; }
+  .topo-description-view .topo-plan-day {
+    background: #2a2a2a;
+    border-color: rgba(255, 255, 255, 0.08);
+    > header {
+      background: rgba(255, 255, 255, 0.04);
+      border-bottom-color: rgba(255, 255, 255, 0.06);
+      strong { color: #f5f5f5; }
+      span { color: #9a9a9a; }
+    }
+    li { border-bottom-color: rgba(255, 255, 255, 0.05); }
+  }
+  .topo-description-view .topo-plan-stop-body strong { color: #f5f5f5; }
+  .topo-description-view .topo-plan-stop-body small { color: #b5b5b5; }
 }
 </style>

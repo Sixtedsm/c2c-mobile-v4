@@ -346,8 +346,9 @@ export default function install(Vue) {
       },
 
       async getPlan(id) {
-        const entry = await store.getDocument('plan', id, '__');
-        return entry?.data || null;
+        // store.getDocument already unwraps the IDB entry to its inner
+        // `data` payload — no second `.data` to read off the result.
+        return (await store.getDocument('plan', id, '__')) || null;
       },
 
       async removePlan(id) {

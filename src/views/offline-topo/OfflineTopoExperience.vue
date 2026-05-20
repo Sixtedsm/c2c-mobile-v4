@@ -224,9 +224,14 @@ export default {
       this.loaded = false;
       this.loadError = false;
       try {
-        const entry = await this.$offline.getDocument(this.type, this.id, this.lang);
-        if (entry?.data) {
-          this.document = entry.data;
+        // $offline.getDocument is a thin pass-through over
+        // pwa/offline-store.getDocument which already returns the
+        // stored doc data (NOT the {type, id, lang, data, ...} wrapper).
+        // Earlier this code reached for `entry.data` and always missed
+        // — every saved topo showed "not in offline".
+        const data = await this.$offline.getDocument(this.type, this.id, this.lang);
+        if (data) {
+          this.document = data;
           this.loaded = true;
         } else {
           this.loadError = true;
