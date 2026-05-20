@@ -338,16 +338,18 @@ export default {
   color: #4a4a4a;
   line-height: 1.5;
 
-  :deep(p) { margin: 0 0 0.7rem; }
-  :deep(h1), :deep(h2), :deep(h3), :deep(h4) {
+  // Vue 2 SFC deep selectors — :deep() is Vue 3 syntax which Vue 2.7
+  // accepts inconsistently; ::v-deep is the safe convention here.
+  ::v-deep p { margin: 0 0 0.7rem; }
+  ::v-deep h1, ::v-deep h2, ::v-deep h3, ::v-deep h4 {
     margin: 1rem 0 0.4rem;
     color: #4a4a4a;
   }
-  :deep(ul), :deep(ol) { padding-left: 1.4rem; margin: 0.4rem 0 0.7rem; }
-  :deep(a) { color: #337ab7; }
-  :deep(img) { max-width: 100%; height: auto; border-radius: 6px; }
-  :deep(table) { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-  :deep(td), :deep(th) { padding: 0.25rem 0.5rem; border-bottom: 1px solid rgba(0, 0, 0, 0.06); }
+  ::v-deep ul, ::v-deep ol { padding-left: 1.4rem; margin: 0.4rem 0 0.7rem; }
+  ::v-deep a { color: #337ab7; }
+  ::v-deep img { max-width: 100%; height: auto; border-radius: 6px; }
+  ::v-deep table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  ::v-deep td, ::v-deep th { padding: 0.25rem 0.5rem; border-bottom: 1px solid rgba(0, 0, 0, 0.06); }
 }
 
 .topo-empty {
@@ -428,7 +430,7 @@ html[data-theme='dark'] {
   }
   .topo-description-view .topo-section h2 { color: #9a9a9a; }
   .topo-description-view .topo-cooked { color: #e5e5e5; }
-  .topo-description-view .topo-cooked :deep(a) { color: #6db4ff; }
+  .topo-description-view .topo-cooked a { color: #6db4ff; }
   .topo-description-view .topo-empty { color: #6b6b6b; }
 }
 </style>
