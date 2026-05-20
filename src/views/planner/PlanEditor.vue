@@ -110,23 +110,8 @@
         show-recenter-on
       />
 
-      <!-- HUD: stats + linked topos chip -->
-      <div class="plan-editor-hud">
-        <div class="plan-editor-hud-stats">
-          <div>
-            <strong>{{ totalDistanceLabel }}</strong>
-            <small>{{ $gettext('Distance') }}</small>
-          </div>
-          <div>
-            <strong>+{{ Math.round(totalClimb) }} m</strong>
-            <small>{{ $gettext('Dénivelé+') }}</small>
-          </div>
-          <div>
-            <strong>{{ plan.coordinates.length }}</strong>
-            <small>{{ $gettext('Points') }}</small>
-          </div>
-        </div>
-      </div>
+      <!-- Stats live in the bottom-sheet handle now (was a floating HUD
+           that collided with the OL controls + quick-layer pill). -->
 
       <!-- Waypoints panel toggle (right side) -->
       <button
@@ -222,8 +207,17 @@
         class="plan-editor-sheet-handle"
         @click="sheetExpanded = !sheetExpanded"
       >
-        <fa-icon :icon="sheetExpanded ? 'chevron-down' : 'chevron-up'" />
-        <span>{{ sheetExpanded ? $gettext('Replier') : $gettext('Détails du plan') }}</span>
+        <!-- Live trace stats, always visible (no longer floating over
+             the map where they collided with controls). -->
+        <span class="plan-handle-stats">
+          <span><strong>{{ totalDistanceLabel }}</strong>&nbsp;{{ $gettext('dist.') }}</span>
+          <span><strong>+{{ Math.round(totalClimb) }}&nbsp;m</strong></span>
+          <span><strong>{{ plan.coordinates.length }}</strong>&nbsp;{{ $gettext('pts') }}</span>
+        </span>
+        <span class="plan-handle-toggle">
+          {{ sheetExpanded ? $gettext('Replier') : $gettext('Détails') }}
+          <fa-icon :icon="sheetExpanded ? 'chevron-down' : 'chevron-up'" />
+        </span>
       </button>
 
       <div v-if="sheetExpanded" class="plan-editor-sheet-body">
@@ -1286,6 +1280,9 @@ ${trkpts}
 
 .plan-editor-title-input {
   flex: 1 1 auto;
+  // min-width:0 lets the input shrink below its intrinsic ~200px so the
+  // Save button never gets pushed off the right edge on a phone.
+  min-width: 0;
   font-size: 0.95rem;
   font-weight: 600;
   color: #4a4a4a;
@@ -1293,6 +1290,11 @@ ${trkpts}
   background: transparent;
   padding: 0.4rem 0.3rem;
   &:focus { outline: none; }
+}
+
+.plan-editor-save {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .plan-editor-tools {
@@ -1368,29 +1370,12 @@ ${trkpts}
   }
 }
 
-.plan-editor-hud {
-  position: absolute;
-  top: 0.5rem;
-  left: 0.5rem;
-  background: rgba(255, 255, 255, 0.92);
-  border-radius: 8px;
-  padding: 0.45rem 0.6rem;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-  pointer-events: none;
-}
-
-.plan-editor-hud-stats {
-  display: flex;
-  gap: 0.9rem;
-  strong { display: block; color: #4a4a4a; font-size: 0.9rem; line-height: 1; }
-  small { display: block; font-size: 0.62rem; color: #6b6b6b; text-transform: uppercase; }
-}
-
 // Floating button on the right side of the map opening the waypoints
-// list panel. Stays above the bottom sheet.
+// list panel. Pushed down so it clears the OL quick-layer pill that
+// also lives at top-right on mobile.
 .plan-editor-wp-toggle {
   position: absolute;
-  top: 0.5rem;
+  top: 3.3rem;
   right: 0.5rem;
   z-index: 12;
   width: 42px;
@@ -1429,7 +1414,7 @@ ${trkpts}
 
 .plan-editor-wp-panel {
   position: absolute;
-  top: 0.5rem;
+  top: 3.3rem;
   right: 3.7rem;
   bottom: 0.5rem;
   z-index: 11;
@@ -1713,7 +1698,8 @@ ${trkpts}
 .plan-editor-sheet-handle {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  justify-content: space-between;
+  gap: 0.5rem;
   width: 100%;
   padding: 0.55rem 0.75rem;
   border: none;
@@ -1724,6 +1710,28 @@ ${trkpts}
   cursor: pointer;
 
   &:hover { background: rgba(0, 0, 0, 0.03); }
+}
+
+.plan-handle-stats {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  font-weight: 500;
+  font-size: 0.78rem;
+  color: #6b6b6b;
+  min-width: 0;
+  overflow: hidden;
+
+  strong { color: #4a4a4a; font-weight: 700; }
+  span { white-space: nowrap; }
+}
+
+.plan-handle-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex: 0 0 auto;
+  color: #337ab7;
 }
 
 .plan-editor-sheet-body {
@@ -1934,17 +1942,16 @@ html[data-theme='dark'] {
     color: #ffb866;
     border-bottom-color: rgba(255, 153, 51, 0.3);
   }
-  .plan-editor-hud {
-    background: rgba(30, 30, 30, 0.92);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
-    strong { color: #f0f0f0; }
-    small { color: #9a9a9a; }
-  }
   .plan-editor-bottom {
     background: #232323;
     border-top-color: rgba(255, 255, 255, 0.08);
   }
   .plan-editor-sheet-handle { color: #e5e5e5; }
+  .plan-handle-stats {
+    color: #9a9a9a;
+    strong { color: #f0f0f0; }
+  }
+  .plan-handle-toggle { color: #6db4ff; }
   .plan-section h3 { color: #9a9a9a; }
   .plan-empty-hint { color: #9a9a9a; }
   .plan-linked-topos li { background: #2a2a2a; }

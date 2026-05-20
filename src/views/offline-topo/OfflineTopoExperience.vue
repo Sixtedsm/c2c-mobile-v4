@@ -22,9 +22,10 @@
       </div>
     </header>
 
-    <!-- Pager body -->
+    <!-- Pager body. Dots header off — the labelled bottom tabs already
+         show the active page, the dots were a redundant indicator. -->
     <div class="experience-body">
-      <swipe-pager :pages="pages" v-model="activePage">
+      <swipe-pager :pages="pages" v-model="activePage" :show-header="false">
         <template #carte="{ active }">
           <topo-map-view
             v-if="loaded"

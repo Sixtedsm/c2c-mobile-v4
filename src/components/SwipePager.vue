@@ -116,10 +116,16 @@ export default {
   computed: {
     trackStyle() {
       const dx = this.dragOffset;
+      // The track's own box is 100% of .swipe-pager (it's a flex item in
+      // a column). Its page children each take flex-basis:100% and do
+      // NOT shrink, so they overflow the track to the right; .swipe-pager
+      // clips with overflow:hidden. translateX(-index*100%) shifts by
+      // exactly one page width. DO NOT set width:N00% here — that was the
+      // bug that, combined with the pages' min-width, blew each page up
+      // to 5x the viewport and produced a horizontal scrollbar.
       return {
         transform: `translateX(calc(${-this.activeIndex * 100}% + ${dx}px))`,
         transition: this.dragging ? 'none' : 'transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1)',
-        width: `${this.pages.length * 100}%`,
       };
     },
   },
@@ -265,20 +271,20 @@ export default {
   will-change: transform;
 }
 
+// Each page is exactly one viewport wide and never shrinks, so N pages
+// lay out side-by-side overflowing the (clipped) track. `min-width: 0`
+// is essential: a flex item's default min-width is `auto` (= content
+// size), which here would let wide content stretch the page past 100%
+// and resurrect the horizontal-scroll bug.
 .swipe-pager-page {
-  flex: 0 0 calc(100% / var(--page-count, 1));
+  flex: 0 0 100%;
   width: 100%;
+  min-width: 0;
+  height: 100%;
   overflow-y: auto;
+  overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
-}
-
-// Children compute their own size — the page itself is just a flex slot.
-.swipe-pager-page {
-  flex-basis: 0;
-  flex-grow: 1;
-  flex-shrink: 0;
-  min-width: 100%;
 }
 
 .swipe-pager-tabs {
